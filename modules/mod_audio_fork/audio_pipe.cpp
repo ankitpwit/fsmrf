@@ -1,5 +1,4 @@
 #include "audio_pipe.hpp"
-#include <switch.h>
 
 #include <cassert>
 #include <iostream>
@@ -8,7 +7,6 @@
 #define MAX_RECV_BUF_SIZE (65 * 1024 * 10)
 #define RECV_BUF_REALLOC_SIZE (8 * 1024)
 
-using namespace drachtio;
 
 namespace {
   static const char* basicAuthUser = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_USER");
@@ -84,7 +82,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
         lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR: %s, response status %d\n", in ? (char *)in : "(null)", rc); 
         if (ap) {
           ap->m_state = LWS_CLIENT_FAILED;
-          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECT_FAIL, (char *) in, NULL, len);
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECT_FAIL, (char *) in);
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find wsi %p..\n", wsi); 
@@ -99,7 +97,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           *ppAp = ap;
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
-          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECT_SUCCESS, NULL, NULL, len);
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECT_SUCCESS, NULL);
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_ESTABLISHED %s unable to find wsi %p..\n", ap->m_uuid.c_str(), wsi); 
@@ -115,12 +113,12 @@ int AudioPipe::lws_callback(struct lws *wsi,
         }
         if (ap->m_state == LWS_CLIENT_DISCONNECTING) {
           // closed by us
-          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL, NULL, len);
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL);
         }
         else if (ap->m_state == LWS_CLIENT_CONNECTED) {
           // closed by far end
           lwsl_notice("%s socket closed by far end\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECTION_DROPPED, NULL, NULL, len);
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECTION_DROPPED, NULL);
         }
         ap->m_state = LWS_CLIENT_DISCONNECTED;
 
@@ -134,19 +132,14 @@ int AudioPipe::lws_callback(struct lws *wsi,
 
     case LWS_CALLBACK_CLIENT_RECEIVE:
       {
-        
         AudioPipe* ap = *ppAp;
         if (!ap) {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE %s unable to find wsi %p..\n", ap->m_uuid.c_str(), wsi); 
           return 0;
         }
-        
+
         if (lws_frame_is_binary(wsi)) {
-          if (ap->is_bidirectional_audio_stream()) {
-            ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::BINARY, NULL, (char *) in, len);
-          } else {
-            lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE received binary frame, discarding.\n");
-          }
+          lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE received binary frame, discarding.\n");
           return 0;
         }
 
@@ -186,7 +179,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           if (lws_is_final_fragment(wsi)) {
             if (nullptr != ap->m_recv_buf) {
               std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
-              ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::MESSAGE, msg.c_str(), NULL, len);
+              ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::MESSAGE, msg.c_str());
               if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
             }
             ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
@@ -273,8 +266,12 @@ static const lws_retry_bo_t retry = {
     0          // jitter_percent
 };
 
-struct lws_context *AudioPipe::context = nullptr;
-std::thread AudioPipe::serviceThread;
+struct lws_context *AudioPipe::contexts[] = {
+  nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr
+};
+unsigned int AudioPipe::numContexts = 0;
+unsigned int AudioPipe::nchild = 0;
 std::string AudioPipe::protocolName;
 std::mutex AudioPipe::mutex_connects;
 std::mutex AudioPipe::mutex_disconnects;
@@ -284,7 +281,8 @@ std::list<AudioPipe*> AudioPipe::pendingDisconnects;
 std::list<AudioPipe*> AudioPipe::pendingWrites;
 AudioPipe::log_emit_function AudioPipe::logger;
 std::mutex AudioPipe::mapMutex;
-bool AudioPipe::stopFlag;
+std::unordered_map<std::thread::id, bool> AudioPipe::stopFlags;
+std::queue<std::thread::id> AudioPipe::threadIds;
 
 void AudioPipe::processPendingConnects(lws_per_vhost_data *vhd) {
   std::list<AudioPipe*> connects;
@@ -377,7 +375,7 @@ void AudioPipe::addPendingConnect(AudioPipe* ap) {
     lwsl_notice("%s after adding connect there are %lu pending connects\n", 
       ap->m_uuid.c_str(), pendingConnects.size());
   }
-  lws_cancel_service(context);
+  lws_cancel_service(contexts[nchild++ % numContexts]);
 }
 void AudioPipe::addPendingDisconnect(AudioPipe* ap) {
   ap->m_state = LWS_CLIENT_DISCONNECTING;
@@ -397,7 +395,8 @@ void AudioPipe::addPendingWrite(AudioPipe* ap) {
   lws_cancel_service(ap->m_vhd->context);
 }
 
-bool AudioPipe::lws_service_thread() {
+bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
+  std::thread::id this_id = std::this_thread::get_id();
   struct lws_context_creation_info info;
 
   const struct lws_protocols protocols[] = {
@@ -423,49 +422,76 @@ bool AudioPipe::lws_service_thread() {
   info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
   info.retry_and_idle_policy = &retry;
 
-  lwsl_notice("AudioPipe::lws_service_thread creating context\n");
+  lwsl_notice("AudioPipe::lws_service_thread creating context in service thread %d.\n", nServiceThread);
 
-  context = lws_create_context(&info);
-  if (!context) {
-    lwsl_err("AudioPipe::lws_service_thread failed creating context\n"); 
+  contexts[nServiceThread] = lws_create_context(&info);
+  if (!contexts[nServiceThread]) {
+    lwsl_err("AudioPipe::lws_service_thread failed creating context in service thread %d..\n", nServiceThread); 
     return false;
   }
 
   int n;
   do {
-    n = lws_service(context, 0);
-  } while (n >= 0 && !stopFlag);
+    n = lws_service(contexts[nServiceThread], 0);
+  } while (n >= 0 && !stopFlags[this_id]);
 
-  lwsl_notice("AudioPipe::lws_service_thread ending\n"); 
-  lws_context_destroy(context);
-
+  // Cleanup once work is done or stopped
+  {
+      std::lock_guard<std::mutex> lock(mapMutex);
+      stopFlags.erase(this_id);
+  }
+  lwsl_notice("AudioPipe::lws_service_thread ending in service thread %d\n", nServiceThread); 
   return true;
 }
 
-void AudioPipe::initialize(const char* protocol, int loglevel, log_emit_function logger) {
-  protocolName = protocol;
-  //lws_set_log_level(loglevel, logger);
+void AudioPipe::initialize(const char* protocol, unsigned int nThreads, int loglevel, log_emit_function logger) {
+  assert(nThreads > 0 && nThreads <= 10);
 
-  lwsl_notice("AudioPipe::initialize starting\n"); 
-  std::lock_guard<std::mutex> lock(mapMutex);
-  stopFlag = false;
-  serviceThread = std::thread(&AudioPipe::lws_service_thread);
+  numContexts = nThreads;
+  protocolName = protocol;
+  lws_set_log_level(loglevel, logger);
+
+  lwsl_notice("AudioPipe::initialize starting %d threads with subprotocol %s\n", nThreads, protocol); 
+  for (unsigned int i = 0; i < numContexts; i++) {
+    std::lock_guard<std::mutex> lock(mapMutex);
+    std::thread t(&AudioPipe::lws_service_thread, i);
+    stopFlags[t.get_id()] = false;
+    threadIds.push(t.get_id());
+    t.detach();
+  }
 }
 
 bool AudioPipe::deinitialize() {
   lwsl_notice("AudioPipe::deinitialize\n"); 
   std::lock_guard<std::mutex> lock(mapMutex);
-  stopFlag = true;
-  if (serviceThread.joinable()) {
-    serviceThread.join();
+  if (!threadIds.empty()) {
+      std::thread::id id = threadIds.front();
+      threadIds.pop();
+      stopFlags[id] = true;
   }
+/*
+  do
+  {
+    lwsl_notice("waiting for pending connects to complete\n");
+  } while (pendingConnects.size() > 0);
+  do
+  {
+    lwsl_notice("waiting for disconnects to complete\n");
+  } while (pendingDisconnects.size() > 0);
+*/
+
+  for (unsigned int i = 0; i < numContexts; i++)
+  {
+    lwsl_notice("AudioPipe::deinitialize destroying context %d of %d\n", i + 1, numContexts);
+    lws_context_destroy(contexts[i]);
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(2));
   return true;
 }
 
 // instance members
 AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path,
-  int sslFlags, size_t bufLen, size_t minFreespace, const char* username, const char* password, char* bugname,
-  int bidirectional_audio_stream, notifyHandler_t callback) :
+  int sslFlags, size_t bufLen, size_t minFreespace, const char* username, const char* password, char* bugname, notifyHandler_t callback) :
   m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_sslFlags(sslFlags),
   m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), m_gracefulShutdown(false),
   m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), m_bugname(bugname),
@@ -475,7 +501,7 @@ AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, cons
     m_username.assign(username);
     m_password.assign(password);
   }
-  m_bidirectional_audio_stream = bidirectional_audio_stream;
+
   m_audio_buffer = new uint8_t[m_audio_buffer_max_len];
 }
 AudioPipe::~AudioPipe() {
