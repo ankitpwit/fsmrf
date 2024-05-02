@@ -65,7 +65,6 @@ public:
     uint32_t channels, 
     char* lang, 
     int interim, 
-    uint32_t config_sample_rate,
 		uint32_t samples_per_second,
     int single_utterance, 
     int separate_recognition,
@@ -79,21 +78,17 @@ public:
       m_audioBuffer(CHUNKSIZE, 15) {
   
     const char* var;
-    const char* google_uri;
     switch_channel_t *channel = switch_core_session_get_channel(session);
 
-    if (!(google_uri = switch_channel_get_variable(channel, "GOOGLE_SPEECH_TO_TEXT_URI"))) {
-      google_uri = "speech.googleapis.com";
-    }
 		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
 			auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
 			auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var);
 			auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
-			m_channel = grpc::CreateChannel(google_uri, creds);
+			m_channel = grpc::CreateChannel("speech.googleapis.com", creds);
 		}
 		else {
 			auto creds = grpc::GoogleDefaultCredentials();
-			m_channel = grpc::CreateChannel(google_uri, creds);
+			m_channel = grpc::CreateChannel("speech.googleapis.com", creds);
 		}
 
   	m_stub = Speech::NewStub(m_channel);
@@ -114,7 +109,7 @@ public:
 		config->set_language_code(lang);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
     
-  	config->set_sample_rate_hertz(config_sample_rate);
+  	config->set_sample_rate_hertz(8000);
 
 		config->set_encoding(RecognitionConfig::LINEAR16);
 
@@ -531,8 +526,8 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t to_rate, uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname,
-          int single_utterance, int separate_recognition, int max_alternatives, int profanity_filter, int word_time_offset,
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname, int single_utterance,
+          int separate_recognition, int max_alternatives, int profanity_filter, int word_time_offset,
           int punctuation, const char* model, int enhanced, const char* hints, char* play_file, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -551,8 +546,8 @@ extern "C" {
       }
       
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-      if (sampleRate != to_rate) {
-          cb->resampler = speex_resampler_init(channels, sampleRate, to_rate, SWITCH_RESAMPLE_QUALITY, &err);
+      if (sampleRate != 8000) {
+          cb->resampler = speex_resampler_init(channels, sampleRate, 8000, SWITCH_RESAMPLE_QUALITY, &err);
         if (0 != err) {
            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
                                  switch_channel_get_name(channel), speex_resampler_strerror(err));
@@ -594,7 +589,7 @@ extern "C" {
 
       GStreamer *streamer = NULL;
       try {
-        streamer = new GStreamer(session, channels, lang, interim, to_rate, sampleRate, single_utterance, separate_recognition, max_alternatives,
+        streamer = new GStreamer(session, channels, lang, interim, sampleRate, single_utterance, separate_recognition, max_alternatives,
          profanity_filter, word_time_offset, punctuation, model, enhanced, hints);
         cb->streamer = streamer;
       } catch (std::exception& e) {
