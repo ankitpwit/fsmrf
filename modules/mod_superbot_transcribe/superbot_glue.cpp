@@ -9,8 +9,8 @@
 #include "superbot/sbt_audio.grpc.pb.h"
 #include "superbot/sbt_asr.grpc.pb.h"
 
-namespace nr_asr = superbot::riva::asr;
-namespace nr = superbot::riva;
+namespace nr_asr = superbot::asr;
+namespace nr = superbot;
 
 #include "mod_superbot_transcribe.h"
 #include "simple_buffer.h"
@@ -51,14 +51,14 @@ public:
   void createInitMessage() {
     switch_channel_t *channel = switch_core_session_get_channel(m_session);
 
-    const char* var = switch_channel_get_variable(channel, "SUPERBOT_RIVA_URI");
+    const char* var = switch_channel_get_variable(channel, "SUPERBOT_ASR_URI");
     std::shared_ptr<grpc::Channel> grpcChannel = grpc::CreateChannel(var, grpc::InsecureChannelCredentials());
     if (!grpcChannel) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer %p failed creating grpc channel to %s\n", this, var);	
       throw std::runtime_error(std::string("Error creating grpc channel to ") + var);
     }
 
-    m_stub = std::move(nr_asr::RivaSpeechRecognition::NewStub(grpcChannel));
+    m_stub = std::move(nr_asr::SuperbotSpeechRecognition::NewStub(grpcChannel));
 
     /* set configuration parameters which are carried in the RecognitionInitMessage */
     auto streaming_config = m_request.mutable_streaming_config();
@@ -290,7 +290,7 @@ private:
 	switch_core_session_t* m_session;
   grpc::ClientContext m_context;
 	std::shared_ptr<grpc::Channel> m_channel;
-	std::unique_ptr<nr_asr::RivaSpeechRecognition::Stub> m_stub;
+	std::unique_ptr<nr_asr::SuperbotSpeechRecognition::Stub> m_stub;
   nr_asr::StreamingRecognizeRequest m_request;
 	std::unique_ptr< grpc::ClientReaderWriterInterface<nr_asr::StreamingRecognizeRequest, nr_asr::StreamingRecognizeResponse> > m_streamer;
   bool m_writesDone;

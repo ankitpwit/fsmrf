@@ -126,11 +126,11 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	}
 
 	/* required channel vars */
-	var = switch_channel_get_variable(channel, "SUPERBOT_RIVA_URI");
+	var = switch_channel_get_variable(channel, "SUPERBOT_ASR_URI");
 
   if (!var) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
-			"SUPERBOT_RIVA_URI channel var must be defined\n");
+			"SUPERBOT_ASR_URI channel var must be defined\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
