@@ -6,11 +6,9 @@
 #include <switch_json.h>
 #include <grpc++/grpc++.h>
 
-#include "superbot/sbt_audio.grpc.pb.h"
 #include "superbot/sbt_asr.grpc.pb.h"
 
-namespace nr_asr = superbot::asr;
-namespace nr = superbot;
+namespace sbt_asr = superbot::asr;
 
 #include "mod_superbot_transcribe.h"
 #include "simple_buffer.h"
@@ -58,14 +56,14 @@ public:
       throw std::runtime_error(std::string("Error creating grpc channel to ") + var);
     }
 
-    m_stub = std::move(nr_asr::SuperbotSpeechRecognition::NewStub(grpcChannel));
+    m_stub = std::move(sbt_asr::SuperbotSpeechRecognition::NewStub(grpcChannel));
 
     /* set configuration parameters which are carried in the RecognitionInitMessage */
     auto streaming_config = m_request.mutable_streaming_config();
     streaming_config->set_interim_results(m_interim);
     auto config = streaming_config->mutable_config();
     config->set_sample_rate_hertz(8000);
-    config->set_encoding(nr::AudioEncoding::LINEAR_PCM);
+    config->set_encoding(sbt_asr::AudioEncoding::LINEAR_PCM);
     config->set_audio_channel_count(1);
 
 
@@ -120,7 +118,7 @@ public:
     const char* hints = switch_channel_get_variable(channel, "SUPERBOT_HINTS");
     if (hints) {
       float boost = -1;
-      nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
+      sbt_asr::SpeechContext* speech_context = config->add_speech_contexts();
 
       // hints are either a simple comma-separated list of phrases, or a json array of objects
       // containing a phrase and a boost value
@@ -131,7 +129,7 @@ public:
         cJSON_ArrayForEach(jPhrase, jHint) {
           cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
           if (jItem) {
-            nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
+            sbt_asr::SpeechContext* speech_context = config->add_speech_contexts();
             auto *phrase = cJSON_GetStringValue(jItem);
             speech_context->add_phrases(phrase);
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "hint: %s\n", phrase);
@@ -148,7 +146,7 @@ public:
       }
       else {
         /* single set of hints */
-        nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
+        sbt_asr::SpeechContext* speech_context = config->add_speech_contexts();
         char *phrases[500] = { 0 };
         int argc = switch_separate_string((char *) hints, ',', phrases, 500);
         for (int i = 0; i < argc; i++) {
@@ -166,7 +164,7 @@ public:
 
     /* speaker diarization */
     if (switch_true(switch_channel_get_variable(channel, "SUPERBOT_SPEAKER_DIARIZATION"))) {
-      nr_asr::SpeakerDiarizationConfig* diarization_config = config->mutable_diarization_config();
+      sbt_asr::SpeakerDiarizationConfig* diarization_config = config->mutable_diarization_config();
       diarization_config->set_enable_speaker_diarization(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable diarization\n", var);
 
@@ -245,7 +243,7 @@ public:
 		return size;
 	}
 
-	bool read(nr_asr::StreamingRecognizeResponse* response) {
+	bool read(sbt_asr::StreamingRecognizeResponse* response) {
 		return m_streamer->Read(response);
 	}
 
@@ -254,7 +252,7 @@ public:
 	}
 
   void startTimers() {
-    //nr_asr::StreamingRecognizeRequest request;
+    //sbt_asr::StreamingRecognizeRequest request;
     //auto msg = request.mutable_control_message()->mutable_start_timers_message();
     //m_streamer->Write(request);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p sent start timers control message\n", this);	
@@ -290,9 +288,9 @@ private:
 	switch_core_session_t* m_session;
   grpc::ClientContext m_context;
 	std::shared_ptr<grpc::Channel> m_channel;
-	std::unique_ptr<nr_asr::SuperbotSpeechRecognition::Stub> m_stub;
-  nr_asr::StreamingRecognizeRequest m_request;
-	std::unique_ptr< grpc::ClientReaderWriterInterface<nr_asr::StreamingRecognizeRequest, nr_asr::StreamingRecognizeResponse> > m_streamer;
+	std::unique_ptr<sbt_asr::SuperbotSpeechRecognition::Stub> m_stub;
+  sbt_asr::StreamingRecognizeRequest m_request;
+	std::unique_ptr< grpc::ClientReaderWriterInterface<sbt_asr::StreamingRecognizeRequest, sbt_asr::StreamingRecognizeResponse> > m_streamer;
   bool m_writesDone;
   bool m_connected;
   bool m_interim;
@@ -314,7 +312,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   }
 
   // Read responses.
-  nr_asr::StreamingRecognizeResponse response;
+  sbt_asr::StreamingRecognizeResponse response;
   while (streamer->read(&response)) {  // Returns false when no more to read.
     count++;
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
