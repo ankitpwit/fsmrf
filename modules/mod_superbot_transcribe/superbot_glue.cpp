@@ -208,47 +208,38 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     for (int r = 0; r < response.results_size(); ++r) {
       const auto& result = response.results(r);
       bool is_final = result.is_final();
-      int num_alternatives = result.alternatives_size();
       int channel_tag = result.channel_tag();
-      float stability = result.stability();
 
       cJSON * jResult = cJSON_CreateObject();
       cJSON * jIsFinal = cJSON_CreateBool(is_final);
       cJSON * jAlternatives = cJSON_CreateArray();
-      cJSON * jAudioProcessed = cJSON_CreateNumber(result.audio_processed());
       cJSON * jChannelTag = cJSON_CreateNumber(channel_tag );
       cJSON * jStability = cJSON_CreateNumber(stability );
       cJSON_AddItemToObject(jResult, "alternatives", jAlternatives);
       cJSON_AddItemToObject(jResult, "is_final", jIsFinal);
-      cJSON_AddItemToObject(jResult, "audio_processed", jAudioProcessed);
-      cJSON_AddItemToObject(jResult, "stability", jStability);
 
       for (int a = 0; a < num_alternatives; ++a) {
         cJSON* jAlt = cJSON_CreateObject();
         cJSON* jTranscript = cJSON_CreateString(result.alternatives(a).transcript().c_str());
         cJSON_AddItemToObject(jAlt, "transcript", jTranscript);
 
-        if (is_final) {
-          auto confidence = result.alternatives(a).confidence();
-          cJSON_AddNumberToObject(jAlt, "confidence", confidence);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "confidence %.2f\n", confidence) ;
+        auto confidence = result.alternatives(a).confidence();
+        cJSON_AddNumberToObject(jAlt, "confidence", confidence);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "confidence %.2f\n", confidence) ;
 
-          int words = result.alternatives(a).words_size();
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got %d words\n", words) ;
-          if (words > 0) {
-            cJSON* jWords = cJSON_CreateArray();
-            for (int w = 0; w < words; w++) {
-              cJSON* jWordInfo = cJSON_CreateObject();
-              cJSON_AddItemToArray(jWords, jWordInfo);
-              auto& wordInfo = result.alternatives(a).words(w);
-              cJSON_AddStringToObject(jWordInfo, "word", wordInfo.word().c_str());
-              cJSON_AddNumberToObject(jWordInfo, "start_time", wordInfo.start_time());
-              cJSON_AddNumberToObject(jWordInfo, "end_time", wordInfo.end_time());
-              cJSON_AddNumberToObject(jWordInfo, "confidence", wordInfo.confidence());
-              cJSON_AddNumberToObject(jWordInfo, "speaker_tag", wordInfo.speaker_tag());
-            }
-            cJSON_AddItemToObject(jAlt, "words", jWords);
+        int words = result.alternatives(a).words_size();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got %d words\n", words) ;
+        if (words > 0) {
+          cJSON* jWords = cJSON_CreateArray();
+          for (int w = 0; w < words; w++) {
+            cJSON* jWordInfo = cJSON_CreateObject();
+            cJSON_AddItemToArray(jWords, jWordInfo);
+            auto& wordInfo = result.alternatives(a).words(w);
+            cJSON_AddStringToObject(jWordInfo, "word", wordInfo.word().c_str());
+            cJSON_AddNumberToObject(jWordInfo, "confidence", wordInfo.confidence());
+            cJSON_AddNumberToObject(jWordInfo, "speaker_tag", wordInfo.speaker_tag());
           }
+          cJSON_AddItemToObject(jAlt, "words", jWords);
         }
         cJSON_AddItemToArray(jAlternatives, jAlt);
       }
