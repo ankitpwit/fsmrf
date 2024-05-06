@@ -209,12 +209,13 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       const auto& result = response.results(r);
       bool is_final = result.is_final();
       int channel_tag = result.channel_tag();
+      char* lang = result.lang();
 
       cJSON * jResult = cJSON_CreateObject();
       cJSON * jIsFinal = cJSON_CreateBool(is_final);
+      cJSON * jLang = cJSON_CreateString(lang);
       cJSON * jAlternatives = cJSON_CreateArray();
       cJSON * jChannelTag = cJSON_CreateNumber(channel_tag );
-      cJSON * jStability = cJSON_CreateNumber(stability );
       cJSON_AddItemToObject(jResult, "alternatives", jAlternatives);
       cJSON_AddItemToObject(jResult, "is_final", jIsFinal);
 
