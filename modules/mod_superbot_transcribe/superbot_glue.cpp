@@ -219,6 +219,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       cJSON * jChannelTag = cJSON_CreateNumber(channel_tag );
       cJSON_AddItemToObject(jResult, "alternatives", jAlternatives);
       cJSON_AddItemToObject(jResult, "is_final", jIsFinal);
+      cJSON_AddItemToObject(jResult, "lang", jLang);
 
       for (int a = 0; a < num_alternatives; ++a) {
         cJSON* jAlt = cJSON_CreateObject();
