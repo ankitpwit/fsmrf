@@ -28,12 +28,12 @@ namespace {
 class GStreamer {
 public:
 	GStreamer(
-    switch_core_session_t *session, uint32_t channels, char* lang, int interim) : 
+    switch_core_session_t *session, uint32_t channels, char* lang, char* dur_type) : 
       m_session(session), 
       m_writesDone(false), 
       m_connected(false), 
       m_language(lang),
-      m_interim(interim),
+      m_dur_type(dur_type),
       m_audioBuffer(CHUNKSIZE, 15) {
   
     const char* var;
@@ -60,136 +60,21 @@ public:
 
     /* set configuration parameters which are carried in the RecognitionInitMessage */
     auto streaming_config = m_request.mutable_streaming_config();
-    streaming_config->set_interim_results(m_interim);
+
     auto config = streaming_config->mutable_config();
     config->set_sample_rate_hertz(8000);
     config->set_encoding(sbt_asr::AudioEncoding::LINEAR_PCM);
     config->set_audio_channel_count(1);
 
-
     /* language */
     config->set_language_code(m_language);
+
+    config->set_dur_type(m_dur_type);
 
     /* model */
     if ((var = switch_channel_get_variable(channel, "SUPERBOT_MODEL"))) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set model %s\n",var);
       config->set_model(var);
-    }
-
-    /* max alternatives */
-    if ((var = switch_channel_get_variable(channel, "SUPERBOT_MAX_ALTERNATIVES"))) {
-      int max_alternatives = atoi(var);
-      if (max_alternatives > 0) {
-        config->set_max_alternatives(max_alternatives);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set max alternatives %d\n", max_alternatives);
-      }
-    }
-    else config->set_max_alternatives(1);
-
-    /* profanity filter */
-    if (switch_true(switch_channel_get_variable(channel, "SUPERBOT_PROFANITY_FILTER"))) {
-      config->set_profanity_filter(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable profanity filter\n",var);
-    }
-    else config->set_profanity_filter(false);
-
-    /* enable word time offsets */
-    if (switch_true(switch_channel_get_variable(channel, "SUPERBOT_WORD_TIME_OFFSETS"))) {
-      config->set_enable_word_time_offsets(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable word time offsets\n",var);
-    }
-    else config->set_enable_word_time_offsets(false);
-    
-    /* punctuation */
-    if (switch_true(switch_channel_get_variable(channel, "SUPERBOT_PUNCTUATION"))) {
-      config->set_enable_automatic_punctuation(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable punctuation\n",var);
-    }
-    else config->set_enable_automatic_punctuation(false);
-
-    /* verbatim transcripts */
-    if (switch_true(switch_channel_get_variable(channel, "SUPERBOT_VERBATIM_TRANSCRIPTS"))) {
-      config->set_verbatim_transcripts(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable verbatim transcripts\n",var);
-    }
-    else config->set_verbatim_transcripts(false);
-
-    /* hints */
-    const char* hints = switch_channel_get_variable(channel, "SUPERBOT_HINTS");
-    if (hints) {
-      float boost = -1;
-      sbt_asr::SpeechContext* speech_context = config->add_speech_contexts();
-
-      // hints are either a simple comma-separated list of phrases, or a json array of objects
-      // containing a phrase and a boost value
-      auto *jHint = cJSON_Parse((char *) hints);
-      if (jHint) {
-        int i = 0;
-        cJSON *jPhrase = NULL;
-        cJSON_ArrayForEach(jPhrase, jHint) {
-          cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
-          if (jItem) {
-            sbt_asr::SpeechContext* speech_context = config->add_speech_contexts();
-            auto *phrase = cJSON_GetStringValue(jItem);
-            speech_context->add_phrases(phrase);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "hint: %s\n", phrase);
-            if (cJSON_GetObjectItem(jPhrase, "boost")) {
-              float boost = (float) cJSON_GetObjectItem(jPhrase, "boost")->valuedouble;
-              speech_context->set_boost(boost);
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
-            }
-            i++;
-          }
-        }
-        cJSON_Delete(jHint);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", i);
-      }
-      else {
-        /* single set of hints */
-        sbt_asr::SpeechContext* speech_context = config->add_speech_contexts();
-        char *phrases[500] = { 0 };
-        int argc = switch_separate_string((char *) hints, ',', phrases, 500);
-        for (int i = 0; i < argc; i++) {
-          speech_context->add_phrases(phrases[i]);
-        }
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
-        const char* boost_str = switch_channel_get_variable(channel, "SUPERBOT_HINTS_BOOST");
-        if (boost_str) {
-          float boost = (float) atof(boost_str);
-          speech_context->set_boost(boost);
-          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
-        }
-      }
-    }
-
-    /* speaker diarization */
-    if (switch_true(switch_channel_get_variable(channel, "SUPERBOT_SPEAKER_DIARIZATION"))) {
-      sbt_asr::SpeakerDiarizationConfig* diarization_config = config->mutable_diarization_config();
-      diarization_config->set_enable_speaker_diarization(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable diarization\n", var);
-
-      if ((var = switch_channel_get_variable(channel, "SUPERBOT_DIARIZATION_SPEAKER_COUNT"))) {
-        int max_speaker_count = atoi(var);
-        diarization_config->set_max_speaker_count(max_speaker_count);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set max speaker count %d\n", max_speaker_count);
-      }
-    }
-
-    /* custom config */
-    const char* custom = switch_channel_get_variable(channel, "SUPERBOT_CUSTOM_CONFIGURATION");
-    if (custom) {
-      auto *jConfig = cJSON_Parse((char *) custom);
-      if (jConfig) {
-        auto custom_config = config->mutable_custom_configuration();
-        cJSON *jItem = NULL;
-        cJSON_ArrayForEach(jItem, jConfig) {
-          if (cJSON_IsString(jItem)) {
-            (*custom_config)[jItem->string] = jItem->valuestring;
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, 
-              "added custom config %s:%s\n", jItem->string, jItem->valuestring);
-          }
-        }
-      }
     }
   }
 
@@ -293,7 +178,7 @@ private:
 	std::unique_ptr< grpc::ClientReaderWriterInterface<sbt_asr::StreamingRecognizeRequest, sbt_asr::StreamingRecognizeResponse> > m_streamer;
   bool m_writesDone;
   bool m_connected;
-  bool m_interim;
+  std::string m_dur_type;
   std::string m_language;
   std::promise<void> m_promise;
   SimpleBuffer m_audioBuffer;
@@ -387,7 +272,7 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t superbot_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-      uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname, void **ppUserData) {
+      uint32_t samples_per_second, uint32_t channels, char* lang, char* dur_type, char *bugname, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       auto read_codec = switch_core_session_get_read_codec(session);
@@ -447,7 +332,7 @@ extern "C" {
       GStreamer *streamer = NULL;
       try {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "superbot_speech_session_init:  allocating streamer\n");
-        streamer = new GStreamer(session, channels, lang, interim);
+        streamer = new GStreamer(session, channels, lang, dur_type);
         cb->streamer = streamer;
       } catch (std::exception& e) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing gstreamer: %s.\n", 

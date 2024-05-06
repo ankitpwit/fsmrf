@@ -104,7 +104,7 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 }
 
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim, char* bugname)
+  char* lang, char* dur_type, char* bugname)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -136,7 +136,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == superbot_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == superbot_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, dur_type, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing superbot speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -150,7 +150,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	return SWITCH_STATUS_SUCCESS;
 }
 
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim|full] [stereo|mono] [bug-name]"
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [short|medium|long] [stereo|mono] [bug-name]"
 SWITCH_STANDARD_API(transcribe_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
@@ -180,14 +180,14 @@ SWITCH_STANDARD_API(transcribe_function)
 			} 
 			else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
-        int interim = argc > 3 && !strcmp(argv[3], "interim");
+        char* dur_type = argv[3];
 				char *bugname = argc > 5 ? argv[5] : MY_BUG_NAME;
 				if (argc > 4 && !strcmp(argv[4], "stereo")) {
           flags |= SMBF_WRITE_STREAM ;
           flags |= SMBF_STEREO;
 				}
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start transcribing %s %s\n", bugname, lang, interim ? "interim": "complete");
-				status = start_capture(lsession, flags, lang, interim, bugname);
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start transcribing %s %s\n", bugname, lang, dur_type);
+				status = start_capture(lsession, flags, lang, dur_type, bugname);
 			}
 			switch_core_session_rwunlock(lsession);
 		}
@@ -231,15 +231,15 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 	/* connect my internal structure to the blank pointer passed to me */
 	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "superbot Speech Transcription API loading..\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Superbot Speech Transcription API loading..\n");
 
   if (SWITCH_STATUS_FALSE == superbot_speech_init()) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing superbot speech interface\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing Superbot speech interface\n");
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "superbot Speech Transcription API successfully loaded\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Superbot Speech Transcription API successfully loaded\n");
 
-	SWITCH_ADD_API(api_interface, "uuid_superbot_transcribe", "superbot Speech Transcription API", transcribe_function, TRANSCRIBE_API_SYNTAX);
+	SWITCH_ADD_API(api_interface, "uuid_superbot_transcribe", "Superbot Speech Transcription API", transcribe_function, TRANSCRIBE_API_SYNTAX);
 	switch_console_set_complete("add uuid_superbot_transcribe start lang-code");
 	switch_console_set_complete("add uuid_superbot_transcribe stop ");
 
