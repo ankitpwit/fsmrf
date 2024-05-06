@@ -208,8 +208,9 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     for (int r = 0; r < response.results_size(); ++r) {
       const auto& result = response.results(r);
       bool is_final = result.is_final();
+      int num_alternatives = result.alternatives_size();
       int channel_tag = result.channel_tag();
-      char* lang = result.lang();
+      auto lang = result.lang();
 
       cJSON * jResult = cJSON_CreateObject();
       cJSON * jIsFinal = cJSON_CreateBool(is_final);
