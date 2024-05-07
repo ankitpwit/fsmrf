@@ -26,7 +26,7 @@ struct cap_cb {
 	char bugname[MAX_BUG_LEN+1];
 	char sessionId[MAX_SESSION_ID+1];
 	char *base;
-  SpeexResamplerState *resampler;
+  	SpeexResamplerState *resampler;
 	void* streamer;
 	responseHandler_t responseHandler;
 	switch_thread_t* thread;

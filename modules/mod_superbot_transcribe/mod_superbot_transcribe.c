@@ -104,7 +104,7 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 }
 
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, char* dur_type, char* bugname)
+  char* lang, char* dur_type, char* request_id, char* bugname)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -136,7 +136,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == superbot_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, dur_type, bugname, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == superbot_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, dur_type, request_id, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing superbot speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -181,13 +181,14 @@ SWITCH_STANDARD_API(transcribe_function)
 			else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         char* dur_type = argv[3];
-				char *bugname = argc > 5 ? argv[5] : MY_BUG_NAME;
-				if (argc > 4 && !strcmp(argv[4], "stereo")) {
+        char* request_id = argv[4];
+				char *bugname = argc > 6 ? argv[6] : MY_BUG_NAME;
+				if (argc > 5 && !strcmp(argv[5], "stereo")) {
           flags |= SMBF_WRITE_STREAM ;
           flags |= SMBF_STEREO;
 				}
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start transcribing %s %s\n", bugname, lang, dur_type);
-				status = start_capture(lsession, flags, lang, dur_type, bugname);
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start transcribing %s %s\n", bugname, lang, dur_type, request_id);
+				status = start_capture(lsession, flags, lang, dur_type, request_id, bugname);
 			}
 			switch_core_session_rwunlock(lsession);
 		}
