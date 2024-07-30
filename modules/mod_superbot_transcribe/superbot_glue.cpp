@@ -28,13 +28,14 @@ namespace {
 class GStreamer {
 public:
 	GStreamer(
-    switch_core_session_t *session, uint32_t channels, char* lang, char* dur_type, char* request_id) : 
+    switch_core_session_t *session, uint32_t channels, char* lang, char* dur_type, char* request_id, char* silence_duration) : 
       m_session(session), 
       m_writesDone(false), 
       m_connected(false), 
       m_language(lang),
       m_dur_type(dur_type),
       m_request_id(request_id),
+      m_silence_duration(silence_duration),
       m_audioBuffer(CHUNKSIZE, 15) {
   
     const char* var;
@@ -72,6 +73,7 @@ public:
 
     config->set_dur_type(m_dur_type);
     config->set_request_id(m_request_id);
+    config->set_silence_duration(m_silence_duration);
 
     /* model */
     if ((var = switch_channel_get_variable(channel, "SUPERBOT_MODEL"))) {
@@ -182,6 +184,7 @@ private:
   bool m_connected;
   std::string m_dur_type;
   std::string m_request_id;
+  std::string m_silence_duration;
   std::string m_language;
   std::promise<void> m_promise;
   SimpleBuffer m_audioBuffer;
@@ -270,7 +273,7 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t superbot_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-      uint32_t samples_per_second, uint32_t channels, char* lang, char* dur_type, char* request_id, char *bugname, void **ppUserData) {
+      uint32_t samples_per_second, uint32_t channels, char* lang, char* dur_type, char* request_id, char* silence_duration, char *bugname, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       auto read_codec = switch_core_session_get_read_codec(session);
@@ -330,7 +333,7 @@ extern "C" {
       GStreamer *streamer = NULL;
       try {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "superbot_speech_session_init:  allocating streamer\n");
-        streamer = new GStreamer(session, channels, lang, dur_type, request_id);
+        streamer = new GStreamer(session, channels, lang, dur_type, request_id, silence_duration);
         cb->streamer = streamer;
       } catch (std::exception& e) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing gstreamer: %s.\n", 
