@@ -153,7 +153,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [short|medium|long] [stereo|mono] [bug-name]"
 SWITCH_STANDARD_API(transcribe_function)
 {
-	char *mycmd = NULL, *argv[7] = { 0 };
+	char *mycmd = NULL, *argv[8] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM;
